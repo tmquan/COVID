@@ -55,24 +55,28 @@ class KFoldCovidDataset(df.RNGDataFlow):
         self.df.columns = self.df.columns.str.replace(' ', '_')
         print(self.df.info())
         self.pathology = pathology
+        self.indices = list(range(len(self.df)))
+
 
         if n_folds>1:
             kfs = KFold(n_splits=n_folds)
             index = 0
-            for train_indices, valid_indices in kfs.split(range(self.__len__())):
+            for train_indices, valid_indices in kfs.split(self.indices):
                 if index != fold_idx:
                     index += 1
                     continue
                 self.indices = train_indices if self.is_train == 'train' else valid_indices
                 break
+        # else:
+        #     self.indices = range(len(self.df))
         else: 
-            self.indices = range(self.__len__())
+            self.indices = list(range(self.__len__()))
 
     def reset_state(self):
         self.rng = get_rng(self)
 
     def __len__(self):
-        return len(self.df)
+        return len(self.indices)
 
     def __iter__(self):
         # indices = list(range(self.__len__()))
@@ -98,7 +102,7 @@ class KFoldCovidDataset(df.RNGDataFlow):
                 label = []
                 if self.types == 3:
                     label.append(self.df.iloc[idx]['Covid'])
-                    label.append(self.df.iloc[idx]['Pheumonia'])
+                    label.append(self.df.iloc[idx]['Pneumonia'])
                     label.append(self.df.iloc[idx]['No_Disease'])
                 elif self.types == 1:
                     assert self.pathology is not None

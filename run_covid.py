@@ -62,8 +62,6 @@ class CustomBinaryStatistics(object):
     def reset(self):
         self._f1_score = -1 
         self._f2_score = -1 
-        # self._auc = -1 
-        self._roc_auc = -1 
         self._precision = -1 
         self._recall = -1 
 
@@ -91,12 +89,6 @@ class CustomBinaryStatistics(object):
         np_label = np.array(self.total_label).astype(np.float32).reshape(-1, self.types)
         np_estim = np.array(self.total_estim).astype(np.float32).reshape(-1, self.types)
         return sklearn.metrics.recall_score(np_label, np_estim, average=self.average_type)
-
-    @property
-    def roc_auc(self):
-        np_label = np.array(self.total_label).astype(np.float32).reshape(-1, self.types)
-        np_estim = np.array(self.total_estim).astype(np.float32).reshape(-1, self.types)
-        return sklearn.metrics.roc_auc_score(np_label, np_estim, average='macro')
 
     @property
     def f1_score(self):
@@ -142,7 +134,6 @@ class CustomBinaryClassificationStats(Inferencer):
                 self.prefix + '_recall': self.stat.recall,
                 self.prefix + '_f1_score': self.stat.f1_score,
                 self.prefix + '_f2_score': self.stat.f2_score,
-                self.prefix + '_roc_auc': self.stat.roc_auc,
                 }
 
 def class_balanced_sigmoid_cross_entropy(logits, label, name='cross_entropy_loss'):
@@ -248,7 +239,7 @@ if __name__ == '__main__':
     parser.add_argument('--eval', action='store_true', help='run evaluation')
     parser.add_argument('--pred', action='store_true', help='run prediction')
     parser.add_argument('--load', help='load model')
-    parser.add_argument('--data', default='/data//data/COVID_Data/', help='Data directory')
+    parser.add_argument('--data', default='/u01/data/COVID_Data/', help='Data directory')
     parser.add_argument('--save', default='train_log/', help='Saving directory')
     parser.add_argument('--mode', default='none', help='Additional mode of resnet')
     
@@ -272,7 +263,7 @@ if __name__ == '__main__':
         # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
 
-    model = Model(args=args)
+    # model = Model(args=args)
 
     if args.eval:
         # To be implemented
@@ -283,130 +274,133 @@ if __name__ == '__main__':
         sys.exit(0)
 
     else:
-        for valid_fold_index in range(args.folds):
-            logger.set_logger_dir(os.path.join(
-                args.save, args.name, args.pathology, str(valid_fold_index), 
-                str(args.shape), str(args.types), ), 'd')
+        with tf.Graph().as_default():
+            for valid_fold_index in range(args.folds):
 
-            # Setup the dataset for training
-            ds_train = KFoldCovidDataset(folder=args.data,
-                                         is_train='train',
-                                         fname='train_valid.csv',
-                                         types=args.types,
-                                         pathology=args.pathology,
-                                         resize=int(args.shape), 
-                                         fold_idx=valid_fold_index,
-                                         n_folds=args.folds)
-           
-            ag_train = [
-                # imgaug.Flip(horiz=True, vert=False, prob=0.5),
-                imgaug.ColorSpace(mode=cv2.COLOR_GRAY2RGB),
-                # imgaug.RotationAndCropValid(max_deg=25),o
-                imgaug.Affine(scale=(0.8, 1.2), 
-                              rotate_max_deg=20, 
-                              shear=10),
-                imgaug.Albumentations(AB.CLAHE(p=0.5)),
-                imgaug.GoogleNetRandomCropAndResize(crop_area_fraction=(0.8, 1.0),
-                                                    aspect_ratio_range=(0.8, 1.2),
-                                                    interp=cv2.INTER_LINEAR, target_shape=args.shape),
-                imgaug.RandomOrderAug(
-                    [imgaug.BrightnessScale((0.6, 1.4), clip=False),
-                     imgaug.Contrast((0.6, 1.4), clip=False),
-                     imgaug.Saturation(0.4, rgb=False),
-                     # rgb-bgr conversion for the constants copied from
-                     # fb.resnet.torch
-                     imgaug.Lighting(0.1,
-                                     eigval=np.asarray(
-                                         [0.2175, 0.0188, 0.0045][::-1]) * 255.0,
-                                     eigvec=np.array(
-                                         [[-0.5675, 0.7192, 0.4009],
-                                          [-0.5808, -0.0045, -0.8140],
-                                          [-0.5836, -0.6948, 0.4203]],
-                                         dtype='float32')[::-1, ::-1]
-                                     )]),
-                imgaug.ColorSpace(mode=cv2.COLOR_RGB2GRAY),
-                imgaug.ToFloat32(),
-            ]
-            ag_label = [ # Label smoothing
-                imgaug.BrightnessScale((0.8, 1.2), clip=False),
-            ]
-            ds_train.reset_state()
-            # ds_train = FixedSizeData(ds_train, 128)
-            ds_train = AugmentImageComponent(ds_train, ag_train, 0)
-            # ds_train = AugmentImageComponent(ds_train, ag_label, 1)
-            ds_train = BatchData(ds_train, args.batch)
-            ds_train = MultiProcessRunnerZMQ(ds_train, num_proc=2)
-            ds_train = PrintData(ds_train)
+                model = Model(args=args)
+                logger.set_logger_dir(os.path.join(
+                    args.save, args.name, args.pathology, str(valid_fold_index), 
+                    str(args.shape), str(args.types), ), 'd')
 
-            # Setup the dataset for validating
-            ds_valid = KFoldCovidDataset(folder=args.data,
-                                         is_train='valid',
-                                         fname='train_valid.csv',
-                                         types=args.types,
-                                         pathology=args.pathology,
-                                         resize=int(args.shape), 
-                                         fold_idx=valid_fold_index,
-                                         n_folds=args.folds)
+                # Setup the dataset for training
+                ds_train = KFoldCovidDataset(folder=args.data,
+                                             is_train='train',
+                                             fname='train.csv',
+                                             types=args.types,
+                                             pathology=args.pathology,
+                                             resize=int(args.shape), 
+                                             fold_idx=valid_fold_index,
+                                             n_folds=1)
+               
+                ag_train = [
+                    # imgaug.Flip(horiz=True, vert=False, prob=0.5),
+                    imgaug.ColorSpace(mode=cv2.COLOR_GRAY2RGB),
+                    # imgaug.RotationAndCropValid(max_deg=25),o
+                    imgaug.Affine(scale=(0.8, 1.2), 
+                                  rotate_max_deg=20, 
+                                  shear=10),
+                    imgaug.Albumentations(AB.CLAHE(p=0.5)),
+                    imgaug.GoogleNetRandomCropAndResize(crop_area_fraction=(0.8, 1.0),
+                                                        aspect_ratio_range=(0.8, 1.2),
+                                                        interp=cv2.INTER_LINEAR, target_shape=args.shape),
+                    imgaug.RandomOrderAug(
+                        [imgaug.BrightnessScale((0.6, 1.4), clip=False),
+                         imgaug.Contrast((0.6, 1.4), clip=False),
+                         imgaug.Saturation(0.4, rgb=False),
+                         # rgb-bgr conversion for the constants copied from
+                         # fb.resnet.torch
+                         imgaug.Lighting(0.1,
+                                         eigval=np.asarray(
+                                             [0.2175, 0.0188, 0.0045][::-1]) * 255.0,
+                                         eigvec=np.array(
+                                             [[-0.5675, 0.7192, 0.4009],
+                                              [-0.5808, -0.0045, -0.8140],
+                                              [-0.5836, -0.6948, 0.4203]],
+                                             dtype='float32')[::-1, ::-1]
+                                         )]),
+                    imgaug.ColorSpace(mode=cv2.COLOR_RGB2GRAY),
+                    imgaug.ToFloat32(),
+                ]
+                ag_label = [ # Label smoothing
+                    imgaug.BrightnessScale((0.8, 1.2), clip=False),
+                ]
+                ds_train.reset_state()
+                # ds_train = FixedSizeData(ds_train, 128)
+                ds_train = AugmentImageComponent(ds_train, ag_train, 0)
+                # ds_train = AugmentImageComponent(ds_train, ag_label, 1)
+                ds_train = BatchData(ds_train, args.batch)
+                ds_train = MultiProcessRunnerZMQ(ds_train, num_proc=2)
+                ds_train = PrintData(ds_train)
 
-            ag_valid = [
-                imgaug.ColorSpace(mode=cv2.COLOR_GRAY2RGB),
-                imgaug.Albumentations(AB.CLAHE(p=1)),
-                imgaug.ColorSpace(mode=cv2.COLOR_RGB2GRAY),
-                imgaug.ToFloat32(),
-            ]
-            ds_valid.reset_state()
-            # ds_valid = FixedSizeData(ds_valid, 128)
-            ds_valid = AugmentImageComponent(ds_valid, ag_valid, 0)
-            ds_valid = BatchData(ds_valid, 1)
-            # ds_valid = MultiProcessRunnerZMQ(ds_valid, num_proc=1)
-            ds_valid = PrintData(ds_valid)
+                # Setup the dataset for validating
+                ds_valid = KFoldCovidDataset(folder=args.data,
+                                             is_train='valid',
+                                             fname='valid.csv',
+                                             types=args.types,
+                                             pathology=args.pathology,
+                                             resize=int(args.shape), 
+                                             fold_idx=valid_fold_index,
+                                             n_folds=1)
 
-
-            # Setup the dataset for validating
-            ds_test2 = KFoldCovidDataset(folder=args.data,
-                                         is_train='test',
-                                         fname='test.csv',
-                                         types=args.types,
-                                         pathology=args.pathology,
-                                         resize=int(args.shape), 
-                                         fold_idx=0,
-                                         n_folds=1)
-
-            ag_test2 = [
-                imgaug.ColorSpace(mode=cv2.COLOR_GRAY2RGB),
-                imgaug.Albumentations(AB.CLAHE(p=1)),
-                imgaug.ColorSpace(mode=cv2.COLOR_RGB2GRAY),
-                imgaug.ToFloat32(),
-            ]
-            ds_test2.reset_state()
-            # ds_test2 = FixedSizeData(ds_test2, 128)
-            ds_test2 = AugmentImageComponent(ds_test2, ag_test2, 0)
-            ds_test2 = BatchData(ds_test2, 1)
-            # ds_test2 = MultiProcessRunnerZMQ(ds_test2, num_proc=1)
-            ds_test2 = PrintData(ds_test2)
+                ag_valid = [
+                    imgaug.ColorSpace(mode=cv2.COLOR_GRAY2RGB),
+                    imgaug.Albumentations(AB.CLAHE(p=1)),
+                    imgaug.ColorSpace(mode=cv2.COLOR_RGB2GRAY),
+                    imgaug.ToFloat32(),
+                ]
+                ds_valid.reset_state()
+                # ds_valid = FixedSizeData(ds_valid, 128)
+                ds_valid = AugmentImageComponent(ds_valid, ag_valid, 0)
+                ds_valid = BatchData(ds_valid, 1)
+                # ds_valid = MultiProcessRunnerZMQ(ds_valid, num_proc=1)
+                ds_valid = PrintData(ds_valid)
 
 
-            # Setup the config
-            config = TrainConfig(
-                model=model,
-                dataflow=ds_train,
-                callbacks=[
-                    ModelSaver(),
-                    MinSaver('cost'),
-                    ScheduledHyperParamSetter('learning_rate',
-                                              [(0, 1e-2), (50, 1e-3), (100, 1e-4), (150, 1e-5), (200, 1e-6)]),
-                    InferenceRunner(ds_valid, [CustomBinaryClassificationStats('estim', 'label', args, prefix='valid'),
-                                               ScalarStats(['loss_xent', 'cost'], prefix='valid'),
-                                               ], tower_name='ValidTower'),
-                    InferenceRunner(ds_test2, [CustomBinaryClassificationStats('estim', 'label', args, prefix='test2'),
-                                               ScalarStats(['loss_xent', 'cost'], prefix='test2'),
-                                               ], tower_name='Test2Tower'),
-                ],
-                max_epoch=250,
-                session_init=SmartInit(args.load),
-            )
+                # Setup the dataset for validating
+                ds_test2 = KFoldCovidDataset(folder=args.data,
+                                             is_train='valid',
+                                             fname='test.csv',
+                                             types=args.types,
+                                             pathology=args.pathology,
+                                             resize=int(args.shape), 
+                                             fold_idx=0,
+                                             n_folds=1)
+
+                ag_test2 = [
+                    imgaug.ColorSpace(mode=cv2.COLOR_GRAY2RGB),
+                    imgaug.Albumentations(AB.CLAHE(p=1)),
+                    imgaug.ColorSpace(mode=cv2.COLOR_RGB2GRAY),
+                    imgaug.ToFloat32(),
+                ]
+                ds_test2.reset_state()
+                # ds_test2 = FixedSizeData(ds_test2, 128)
+                ds_test2 = AugmentImageComponent(ds_test2, ag_test2, 0)
+                ds_test2 = BatchData(ds_test2, 1)
+                # ds_test2 = MultiProcessRunnerZMQ(ds_test2, num_proc=1)
+                ds_test2 = PrintData(ds_test2)
 
 
-            trainer = SyncMultiGPUTrainerParameterServer(max(get_num_gpu(), 1))
+                # Setup the config
+                config = TrainConfig(
+                    model=model,
+                    dataflow=ds_train,
+                    callbacks=[
+                        ModelSaver(),
+                        MinSaver('cost'),
+                        ScheduledHyperParamSetter('learning_rate',
+                                                  [(0, 1e-2), (50, 1e-3), (100, 1e-4), (150, 1e-5), (200, 1e-6)]),
+                        InferenceRunner(ds_valid, [CustomBinaryClassificationStats('estim', 'label', args, prefix='valid'),
+                                                   ScalarStats(['loss_xent', 'cost'], prefix='valid'),
+                                                   ], tower_name='ValidTower'),
+                        InferenceRunner(ds_test2, [CustomBinaryClassificationStats('estim', 'label', args, prefix='test2'),
+                                                   ScalarStats(['loss_xent', 'cost'], prefix='test2'),
+                                                   ], tower_name='Test2Tower'),
+                    ],
+                    max_epoch=250,
+                    session_init=SmartInit(args.load),
+                )
 
-            launch_train_with_config(config, trainer)
+
+                trainer = SyncMultiGPUTrainerParameterServer(max(get_num_gpu(), 1))
+
+                launch_train_with_config(config, trainer)
