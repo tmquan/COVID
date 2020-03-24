@@ -1,3 +1,4 @@
+
 import os
 
 import cv2
@@ -9,16 +10,14 @@ import pandas as pd
 import tensorpack.dataflow as df
 from tensorpack.utils import get_rng
 from tensorpack.utils.argtools import shape2d
-from sklearn.model_selection import KFold
-from sklearn.model_selection import StratifiedKFold
 
-class KFoldCovidDataset(df.RNGDataFlow):
+
+class Vinmec(df.RNGDataFlow):
     # https://github.com/tensorpack/tensorpack/blob/master/tensorpack/dataflow/image.py
     """ Produce images read from a list of files as (h, w, c) arrays. """
 
-    def __init__(self, folder, types=3, is_train='train', channel=1,
-                 resize=None, debug=False, shuffle=False, pathology=None, fname='train.csv', 
-                 fold_idx=0, n_folds=5):
+    def __init__(self, folder, types=14, is_train='train', channel=1,
+                 resize=None, debug=False, shuffle=False, pathology=None, fname='train.csv'):
         """[summary]
         [description
         Arguments:
@@ -33,7 +32,7 @@ class KFoldCovidDataset(df.RNGDataFlow):
             fname {str} -- [description] (default: {"train.csv"})
         """
         self.version = "1.0.0"
-        self.description = "KFoldCovidDataset is a large dataset of chest X-rays\n",
+        self.description = "Vinmec is a large dataset of chest X-rays\n",
         self.citation = "\n"
         self.folder = folder
         self.types = types
@@ -56,43 +55,24 @@ class KFoldCovidDataset(df.RNGDataFlow):
         self.df.columns = self.df.columns.str.replace(' ', '_')
         print(self.df.info())
         self.pathology = pathology
-        self.indices = range(0, 1)
-
-        if n_folds>1:
-            kfs = StratifiedKFold(n_splits=n_folds, random_state=2222, shuffle=True)
-            index = 0
-            # print(self.df[['Covid', 'Pneumonia', 'No_Disease']])
-            for train_indices, valid_indices in kfs.split(range(len(self.df)), 
-                y=self.df[['Covid']]):
-                if index != fold_idx:
-                    index += 1
-                    continue
-                self.indices = train_indices if self.is_train == 'train' else valid_indices
-                break
-        else: 
-            self.indices = list(i for i in range(len(self.df)))
-        print(self.__len__())
-        print(self.indices)
 
     def reset_state(self):
         self.rng = get_rng(self)
 
     def __len__(self):
-        return len(self.indices)
+        return len(self.df)
 
     def __iter__(self):
-        # indices = list(range(self.__len__()))
-        # if self.is_train == 'train':
-        #     self.rng.shuffle(indices)
-        self.rng.shuffle(self.indices)
+        indices = list(range(self.__len__()))
+        if self.is_train == 'train':
+            self.rng.shuffle(indices)
 
-        for idx in self.indices:
+        for idx in indices:
             fpath = os.path.join(self.folder, 'data') #(os.path.dirname(self.folder), 'data')
             fname = os.path.join(fpath, self.df.iloc[idx]['Images'])
             image = cv2.imread(fname, self.imread_mode)
             assert image is not None, fname
-            if image is None:
-                print('File {}'.format(fname))
+            # print('File {}, shape {}'.format(fname, image.shape))
             if self.channel == 3:
                 image = image[:, :, ::-1]
             if self.resize is not None:
@@ -103,10 +83,37 @@ class KFoldCovidDataset(df.RNGDataFlow):
             # Process the label
             if self.is_train == 'train' or self.is_train == 'valid':
                 label = []
-                if self.types == 3:
-                    label.append(self.df.iloc[idx]['Covid'])
-                    label.append(self.df.iloc[idx]['Pheumonia'])
-                    label.append(self.df.iloc[idx]['No_Disease'])
+                if self.types == 5:
+                    label.append(self.df.iloc[idx]['Atelectasis'])
+                    label.append(self.df.iloc[idx]['Cardiomegaly'])
+                    label.append(self.df.iloc[idx]['Consolidation'])
+                    label.append(self.df.iloc[idx]['Edema'])
+                    label.append(self.df.iloc[idx]['Pleural_Effusion'])
+                    # label.append(self.df.iloc[idx]['Pneumonia/infection'])
+                if self.types == 6:
+                    label.append(self.df.iloc[idx]['Airspace_Opacity'])
+                    label.append(self.df.iloc[idx]['Cardiomegaly'])
+                    label.append(self.df.iloc[idx]['Fracture'])
+                    label.append(self.df.iloc[idx]['Lung_Lesion'])
+                    label.append(self.df.iloc[idx]['Pleural_Effusion'])
+                    label.append(self.df.iloc[idx]['Pneumothorax'])
+                if self.types == 16:
+                    label.append(self.df.iloc[idx]['Atelectasis'])
+                    label.append(self.df.iloc[idx]['Cardiomegaly'])
+                    label.append(self.df.iloc[idx]['Consolidation'])
+                    label.append(self.df.iloc[idx]['Edema'])
+                    label.append(self.df.iloc[idx]['Pleural_Effusion'])
+                    label.append(self.df.iloc[idx]['Pneumothorax'])
+                    label.append(self.df.iloc[idx]['Pleural_Other'])
+                    label.append(self.df.iloc[idx]['Lung_Lesion'])
+                    label.append(self.df.iloc[idx]['Airspace_Opacity'])
+                    label.append(self.df.iloc[idx]['Pneumonia/infection'])
+                    label.append(self.df.iloc[idx]['Cavitation'])
+                    label.append(self.df.iloc[idx]['Fibrosis'])
+                    label.append(self.df.iloc[idx]['Widening_Mediastinum'])
+                    label.append(self.df.iloc[idx]['Medical_device'])
+                    label.append(self.df.iloc[idx]['Fracture'])
+                    label.append(self.df.iloc[idx]['No_Finding'])
                 elif self.types == 1:
                     assert self.pathology is not None
                     label.append(self.df.iloc[idx][self.pathology])
@@ -124,16 +131,10 @@ class KFoldCovidDataset(df.RNGDataFlow):
 
 
 if __name__ == '__main__':
-    ds = KFoldCovidDataset(folder='/data/COVID_Data/',
-                            is_train='valid',
-                             fname='train_valid.csv',
-                             types=1,
-                             pathology='Covid',
-                             resize=int(320), 
-                             fold_idx=1,
-                             n_folds=5)
+    ds = Vinmec(folder='/u01/data/Vimmec_Data_small/',
+                train_or_valid='train',
+                resize=256)
     ds.reset_state()
-    print(ds.__len__())
     # ds = df.MultiProcessRunnerZMQ(ds, num_proc=8)
     ds = df.BatchData(ds, 32)
     # ds = df.PrintData(ds)
