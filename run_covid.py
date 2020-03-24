@@ -301,7 +301,7 @@ if __name__ == '__main__':
         # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
 
-    model = Model(args=args)
+    # model = Model(args=args)
 
     if args.eval:
         # To be implemented
@@ -313,14 +313,19 @@ if __name__ == '__main__':
 
     else:
         for valid_fold_index in range(args.folds):
+            # with tf.Graph().as_default():
+            tf.reset_default_graph()
             logger.set_logger_dir(os.path.join(
-                args.save, args.name, args.pathology, str(valid_fold_index), 
+                args.save, args.name, args.pathology, 
+                os.path.basename(args.load) if args.load else "Scratch", 
+                str(valid_fold_index), 
                 str(args.shape), str(args.types), ), 'd')
 
+            model = Model(args=args)
             # Setup the dataset for training
             ds_train = KFoldCovidDataset(folder=args.data,
                                          is_train='train',
-                                         fname='train_valid.csv',
+                                         fname='train_ncov.csv',
                                          types=args.types,
                                          pathology=args.pathology,
                                          resize=int(args.shape), 
@@ -373,7 +378,7 @@ if __name__ == '__main__':
             # Setup the dataset for validating
             ds_valid = KFoldCovidDataset(folder=args.data,
                                          is_train='valid',
-                                         fname='train_valid.csv',
+                                         fname='train_ncov.csv',
                                          types=args.types,
                                          pathology=args.pathology,
                                          resize=int(args.shape), 
@@ -398,7 +403,7 @@ if __name__ == '__main__':
             # Setup the dataset for validating
             ds_test2 = KFoldCovidDataset(folder=args.data,
                                          is_train='valid',
-                                         fname='test.csv',
+                                         fname='test_ncov.csv',
                                          types=args.types,
                                          pathology=args.pathology,
                                          resize=int(args.shape), 
